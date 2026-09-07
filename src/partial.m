@@ -124,11 +124,19 @@
         return err(@"Server did not return a 200 status code!");
     }
 
-    // Check for range support
+    // Check for range support. Some CDNs (especially cached Apple IPSW
+    // endpoints) omit Accept-Ranges on HEAD but still honor Range GETs.
     NSString* range = [response valueForHTTPHeaderField:@"Accept-Ranges"];
     if (![range isEqualToString:@"bytes"]) {
-        log(@"Server does not support range requests!");
-        return err(@"Server does not support range requests!");
+        NSMutableURLRequest* probe = [NSMutableURLRequest requestWithURL:self->_url];
+        [probe setValue:@"bytes=0-0" forHTTPHeaderField:@"Range"];
+        NSHTTPURLResponse* probeResponse = nil;
+        NSError* probeError = nil;
+        [self _makeSynchronousRequest:probe returningResponse:&probeResponse error:&probeError];
+        if (probeError || probeResponse.statusCode != 206) {
+            log(@"Server does not support range requests!");
+            return err(@"Server does not support range requests!");
+        }
     }
 
     self->_size = response.expectedContentLength;
